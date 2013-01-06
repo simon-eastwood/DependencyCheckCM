@@ -25,6 +25,7 @@ package org.codesecure.dependencycheck.data.nvdcve.xml;
  * @author Jeremy
  */
 public class InvalidDataException extends Exception {
+    private static final long serialVersionUID = 1L;
 
     /**
      * Creates an InvalidDataException
