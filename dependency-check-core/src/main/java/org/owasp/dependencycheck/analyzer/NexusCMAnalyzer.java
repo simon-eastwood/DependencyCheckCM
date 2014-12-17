@@ -254,23 +254,23 @@ private Identifier getCPEFromNexus (String grpId, String artId, String version) 
                  final Document doc = builder.parse(conn.getInputStream()); 
                  final XPath xpath = XPathFactory.newInstance().newXPath(); 
                  final String cpe = xpath 
-120                         .evaluate( 
-121                                 "/customMetadataResponse/data/customMetadata/value", 
-122                                 doc); 
-134                 return new Identifier(cpe); 
-135             } catch (Throwable e) { 
-136                 // Anything else is jacked-up XML stuff that we really can't recover 
-137                 // from well 
-138                 throw new IOException(e.getMessage(), e); 
-139             } 
-140         } else if (conn.getResponseCode() == 404) { 
-141             throw new FileNotFoundException("Artifact not found in Nexus"); 
-142         } else { 
-143             final String msg = String.format("Could not connect to Nexus received response code: %d %s", 
-144                     conn.getResponseCode(), conn.getResponseMessage()); 
-145             LOGGER.fine(msg); 
-146             throw new IOException(msg); 
-147         } 
+                         .evaluate( 
+                                 "/customMetadataResponse/data/customMetadata/value", 
+                                 doc); 
+                 return new Identifier(cpe); 
+             } catch (Throwable e) { 
+                 // Anything else is jacked-up XML stuff that we really can't recover 
+                 // from well 
+                 throw new IOException(e.getMessage(), e); 
+             } 
+         } else if (conn.getResponseCode() == 404) { 
+             throw new FileNotFoundException("Artifact not found in Nexus"); 
+         } else { 
+             final String msg = String.format("Could not connect to Nexus received response code: %d %s", 
+                     conn.getResponseCode(), conn.getResponseMessage()); 
+             LOGGER.fine(msg); 
+             throw new IOException(msg); 
+         } 
     
 }
 
