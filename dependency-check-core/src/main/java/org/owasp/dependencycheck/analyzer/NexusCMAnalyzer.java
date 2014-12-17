@@ -253,10 +253,14 @@ private Identifier getCPEFromNexus (String grpId, String artId, String version) 
                          .newInstance().newDocumentBuilder(); 
                  final Document doc = builder.parse(conn.getInputStream()); 
                  final XPath xpath = XPathFactory.newInstance().newXPath(); 
+                 
+                 // TODO: need to select the right 1 from XML doc
                  final String cpe = xpath 
                          .evaluate( 
                                  "/customMetadataResponse/data/customMetadata/value", 
                                  doc); 
+                                 
+                // TODO check constructor of indentifier. What about confidence?
                  return new Identifier(cpe); 
              } catch (Throwable e) { 
                  // Anything else is jacked-up XML stuff that we really can't recover 
