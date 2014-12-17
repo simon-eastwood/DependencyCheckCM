@@ -1,11 +1,13 @@
 /*
-
+Version of the Nexus Analyer which read the CPE identifier from Nexus custom metadata.
+This allows a Nexus administrator to ensure that a given jar file is correctly identified by DependencyCheck (in case it cant figure it out for itself), and then find any security violations
  */
 package org.owasp.dependencycheck.analyzer;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Set;
 import java.util.logging.Level;
@@ -18,6 +20,16 @@ import org.owasp.dependencycheck.dependency.Confidence;
 import org.owasp.dependencycheck.dependency.Dependency;
 import org.owasp.dependencycheck.utils.InvalidSettingException;
 import org.owasp.dependencycheck.utils.Settings;
+
+import javax.xml.parsers.DocumentBuilder; 
+import javax.xml.parsers.DocumentBuilderFactory; 
+import javax.xml.xpath.XPath; 
+import javax.xml.xpath.XPathFactory; 
+import org.owasp.dependencycheck.utils.InvalidSettingException; 
+import org.owasp.dependencycheck.utils.Settings; 
+import org.owasp.dependencycheck.utils.URLConnectionFactory; 
+import org.w3c.dom.Document; 
+import org.owasp.dependencycheck.dependency.Identifier;
 
 /**
  * Analyzer which will attempt to locate a dependency on a Nexus service by SHA-1 digest of the dependency.
@@ -184,6 +196,9 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
         try {
             final MavenArtifact ma = searcher.searchSha1(dependency.getSha1sum());
             
+            Identifier cpe = getCPEFromNexus(ma.getGroupId(), ma.getArtifactId(), ma.getVersion() );
+            
+             dependency.addIdentifier(cpe);
             
            // dependency.addAsEvidence("nexus", ma, Confidence.HIGH);
         } catch (IllegalArgumentException iae) {
@@ -198,5 +213,67 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
             LOGGER.log(Level.FINE, "Could not connect to nexus repository", ioe);
         }
     }
+
+
+    /**
+     * Calls Nexus to get metadata
+     *
+     * @param grpId the group id
+     * @param artId  the art id
+     * @param version  the version number
+     * @throws AnalysisException when there's an exception during analysis
+     */
+    
+private Identifier getCPEFromNexus (String grpId, String artId, String version) {
+    // example id needed : urn:maven/artifact#abbot:abbot:1.0.1::jar
+    
+    String artifactIdentifier =  "urn:maven/artifact#" +
+                                        grpId + ":" +
+                                        artId + ":" +
+                                        version + "::jar";
+    final URL url = new URL(rootURL, String.format("index/custom_metadata/%s/%s", 
+                 repo, Base64encoded (artifactIdentifier)); 
+ 
+    LOGGER.fine(String.format("Retrieving custom metadata from Nexus url %s", url.toString()));
+    
+    
+    final HttpURLConnection conn = URLConnectionFactory.createHttpURLConnection(url, false /*dont use proxy*/ ); 
+
+ 
+     conn.setDoOutput(true); 
+ 
+ 
+     conn.addRequestProperty("Accept", "application/xml"); 
+     conn.connect(); 
+ 
+ 
+     if (conn.getResponseCode() == 200) { 
+     try { 
+         final DocumentBuilder builder = DocumentBuilderFactory 
+                         .newInstance().newDocumentBuilder(); 
+                 final Document doc = builder.parse(conn.getInputStream()); 
+                 final XPath xpath = XPathFactory.newInstance().newXPath(); 
+                 final String cpe = xpath 
+120                         .evaluate( 
+121                                 "/customMetadataResponse/data/customMetadata/value", 
+122                                 doc); 
+134                 return new Identifier(cpe); 
+135             } catch (Throwable e) { 
+136                 // Anything else is jacked-up XML stuff that we really can't recover 
+137                 // from well 
+138                 throw new IOException(e.getMessage(), e); 
+139             } 
+140         } else if (conn.getResponseCode() == 404) { 
+141             throw new FileNotFoundException("Artifact not found in Nexus"); 
+142         } else { 
+143             final String msg = String.format("Could not connect to Nexus received response code: %d %s", 
+144                     conn.getResponseCode(), conn.getResponseMessage()); 
+145             LOGGER.fine(msg); 
+146             throw new IOException(msg); 
+147         } 
+    
+}
+
+
 }
 
