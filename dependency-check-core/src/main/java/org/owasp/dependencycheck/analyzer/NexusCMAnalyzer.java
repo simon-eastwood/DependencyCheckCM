@@ -1,6 +1,6 @@
 /*
-Version of the Nexus Analyer which read the CPE identifier from Nexus custom metadata.
-This allows a Nexus administrator to ensure that a given jar file is correctly identified by DependencyCheck (in case it cant figure it out for itself), and then find any security violations
+Version of the Nexus Analyer which reads the CPE identifier from Nexus custom metadata.
+This allows a Nexus administrator to ensure that a given jar file is correctly identified by DependencyCheck (in case it cant figure it out for itself), and then find any security violations for that jar.
  */
 package org.owasp.dependencycheck.analyzer;
 
@@ -32,18 +32,21 @@ import org.w3c.dom.Document;
 import org.owasp.dependencycheck.dependency.Identifier;
 
 /**
- * Analyzer which will attempt to locate a dependency on a Nexus service by SHA-1 digest of the dependency.
+ * Analyzer which will attempt to locate a dependency on a Nexus service by SHA-1 digest of the dependency,
+ * and then see if there is any custom metadata set for that artefact. If there is, it will use the metadata to set the cpe identifier
  *
  * There are two settings which govern this behavior:
  *
  * <ul>
  * <li>{@link org.owasp.dependencycheck.utils.Settings.KEYS#ANALYZER_NEXUS_ENABLED} determines whether this analyzer is
  * even enabled. This can be overridden by setting the system property.</li>
+ *This analyzer is derived from the Nexus Analyzer and uses the same settings in order to connect to Nexus 
+ * 
  * <li>{@link org.owasp.dependencycheck.utils.Settings.KEYS#ANALYZER_NEXUS_URL} the URL to a Nexus service to search by
  * SHA-1. There is an expected <code>%s</code> in this where the SHA-1 will get entered.</li>
  * </ul>
  *
- * @author colezlaw
+ * @author seastwood
  */
 public class NexusCMAnalyzer extends NexusAnalyzer {
 
@@ -83,10 +86,9 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
      *
      * @return <code>true</code> if the analyzer is enabled; otherwise <code>false</code>
      */
-    private boolean checkEnabled() {
+    protected boolean checkEnabled() {
         /* Enable this analyzer ONLY if the Nexus URL has been set to something
-         other than the default one (if it's the default one, we'll use the
-         central one) and it's enabled by the user.
+         other than the default one and it's enabled by the user.
          */
         boolean retval = false;
         try {
@@ -95,10 +97,10 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
                 LOGGER.info("Enabling Nexus CM analyzer");
                 retval = true;
             } else {
-                LOGGER.fine("Nexus analyzer disabled, using Central instead");
+                LOGGER.fine("Nexus CM analyzer disabled");
             }
         } catch (InvalidSettingException ise) {
-            LOGGER.warning("Invalid setting. Disabling Nexus analyzer");
+            LOGGER.warning("Invalid setting. Disabling Nexus CM analyzer");
         }
 
         return retval;
@@ -125,11 +127,11 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
         LOGGER.fine(String.format("Nexus CM Analyzer enabled: %s", isEnabled()));
         if (isEnabled()) {
             final String searchUrl = Settings.getString(Settings.KEYS.ANALYZER_NEXUS_URL);
-            LOGGER.fine(String.format("Nexus Analyzer URL: %s", searchUrl));
+            LOGGER.fine(String.format("Nexus CM Analyzer URL: %s", searchUrl));
             try {
                 searcher = new NexusSearch(new URL(searchUrl));
                 if (!searcher.preflightRequest()) {
-                    LOGGER.warning("There was an issue getting Nexus CM status. Disabling analyzer.");
+                    LOGGER.warning("There was an issue getting Nexus CM status. Disabling Nexus CM analyzer.");
                     setEnabled(false);
                 }
             } catch (MalformedURLException mue) {
@@ -196,11 +198,10 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
         try {
             final MavenArtifact ma = searcher.searchSha1(dependency.getSha1sum());
             
-            Identifier cpe = getCPEFromNexus(ma.getGroupId(), ma.getArtifactId(), ma.getVersion() );
+            getCMFromNexus(repo, ma.getGroupId(), ma.getArtifactId(), ma.getVersion(), dependency);
             
-             dependency.addIdentifier(cpe);
             
-           // dependency.addAsEvidence("nexus", ma, Confidence.HIGH);
+            
         } catch (IllegalArgumentException iae) {
             
             LOGGER.info(String.format("invalid sha-1 hash on %s", dependency.getFileName()));
@@ -218,21 +219,26 @@ public class NexusCMAnalyzer extends NexusAnalyzer {
     /**
      * Calls Nexus to get metadata
      *
+     * @param repo the name of the repository in which the artifact can be found
      * @param grpId the group id
      * @param artId  the art id
      * @param version  the version number
+     * @dependency  the dependency which will be enriched with information from Nexus Custom Metadata if any
      * @throws AnalysisException when there's an exception during analysis
      */
     
-private Identifier getCPEFromNexus (String grpId, String artId, String version) {
-    // example id needed : urn:maven/artifact#abbot:abbot:1.0.1::jar
+protected void getCMFromNexus (String repo, String grpId, String artId, String version, Dependency dependency) throws IOException, FileNotFoundException {
     
+    // construct id needed to query custom metadata
+    // example id needed : urn:maven/artifact#abbot:abbot:1.0.1::jar
     String artifactIdentifier =  "urn:maven/artifact#" +
                                         grpId + ":" +
                                         artId + ":" +
                                         version + "::jar";
-    final URL url = new URL(rootURL, String.format("index/custom_metadata/%s/%s", 
-                 repo, Base64encoded (artifactIdentifier)); 
+    byte[]   bytesEncoded = Base64.encodeBase64(artifactIdentifier.getBytes());
+    
+   final URL url = new URL(rootURL, String.format("index/custom_metadata/%s/%s", 
+                 repo, newString (bytesEncoded) ); 
  
     LOGGER.fine(String.format("Retrieving custom metadata from Nexus url %s", url.toString()));
     
@@ -254,14 +260,15 @@ private Identifier getCPEFromNexus (String grpId, String artId, String version) 
                  final Document doc = builder.parse(conn.getInputStream()); 
                  final XPath xpath = XPathFactory.newInstance().newXPath(); 
                  
-                 // TODO: need to select the right 1 from XML doc
-                 final String cpe = xpath 
+                final String cpe = xpath 
                          .evaluate( 
-                                 "/customMetadataResponse/data/customMetadata/value", 
+                                 "/customMetadataResponse/data/customMetadata/key[text()='cpe']/../value", 
                                  doc); 
                                  
-                // TODO check constructor of indentifier. What about confidence?
-                 return new Identifier(cpe); 
+                Identifier id = new Identifier(cpe);
+                id.setConfidence (Confidence.HIGHEST);
+                dependency.addIdentifier(id);
+                return;
              } catch (Throwable e) { 
                  // Anything else is jacked-up XML stuff that we really can't recover 
                  // from well 
